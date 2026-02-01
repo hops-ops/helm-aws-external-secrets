@@ -1,0 +1,92 @@
+# code: language=yaml
+#
+# AWS Pod Identity for external-secrets Secrets Manager and SSM Parameter Store access
+#
+
+---
+apiVersion: aws.hops.ops.com.ai/v1alpha1
+kind: PodIdentity
+metadata:
+  name: {{ $state.name }}-pod-identity
+  annotations:
+    {{ setResourceNameAnnotation "pod-identity" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  clusterName: {{ $state.clusterName }}
+  region: {{ $state.aws.region }}
+  providerConfigRef:
+    name: {{ $state.aws.providerConfigRef.name }}
+    kind: {{ $state.aws.providerConfigRef.kind }}
+  {{- if $state.aws.rolePrefix }}
+  rolePrefix: {{ $state.aws.rolePrefix }}
+  {{- end }}
+  {{- if $state.aws.permissionsBoundaryArn }}
+  permissionsBoundaryArn: {{ $state.aws.permissionsBoundaryArn }}
+  {{- end }}
+  serviceAccount:
+    name: {{ $state.serviceAccount.name }}
+    namespace: {{ $state.serviceAccount.namespace }}
+  inlinePolicy:
+    - name: external-secrets
+      policy: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:ListSecrets"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath",
+                "ssm:DescribeParameters"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kms:Decrypt"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+  tags: {{ $state.aws.tags | toJson }}
+
+# ==============================================================================
+# Usage: Protect PodIdentity from deletion until Helm release is deleted
+# ==============================================================================
+# external-secrets pods depend on the PodIdentity for AWS credentials.
+# Deleting PodIdentity first would break external-secrets' ability to sync secrets.
+{{- if and $state.observed.helmExternalSecrets.ready $state.observed.podIdentity.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-helm-before-pod-identity
+  annotations:
+    {{ setResourceNameAnnotation "usage-pod-identity" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  of:
+    apiVersion: aws.hops.ops.com.ai/v1alpha1
+    kind: PodIdentity
+    resourceRef:
+      name: {{ $state.name }}-pod-identity
+  by:
+    apiVersion: helm.hops.ops.com.ai/v1alpha1
+    kind: ExternalSecrets
+    resourceRef:
+      name: {{ $state.name }}
+  replayDeletion: true
+{{- end }}

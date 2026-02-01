@@ -1,0 +1,49 @@
+# code: language=yaml
+#
+# Compute status values from observed state
+#
+
+# ==============================================================================
+# Extract observed state from composed resources
+# ==============================================================================
+{{- $observed := $.observed.resources | default dict }}
+
+# Check if helm-external-secrets is ready
+{{- $helmExternalSecretsObs := get $observed "helm-external-secrets" | default dict }}
+{{- $helmExternalSecretsResource := $helmExternalSecretsObs.resource | default dict }}
+{{- $helmExternalSecretsStatus := $helmExternalSecretsResource.status | default dict }}
+{{- $helmExternalSecretsConditions := $helmExternalSecretsStatus.conditions | default list }}
+{{- $helmExternalSecretsReady := false }}
+{{- range $cond := $helmExternalSecretsConditions }}
+  {{- if and (eq $cond.type "Ready") (eq $cond.status "True") }}
+    {{- $helmExternalSecretsReady = true }}
+  {{- end }}
+{{- end }}
+
+# Check if pod-identity is ready
+{{- $podIdentityObs := get $observed "pod-identity" | default dict }}
+{{- $podIdentityResource := $podIdentityObs.resource | default dict }}
+{{- $podIdentityStatus := $podIdentityResource.status | default dict }}
+{{- $podIdentityConditions := $podIdentityStatus.conditions | default list }}
+{{- $podIdentityReady := false }}
+{{- range $cond := $podIdentityConditions }}
+  {{- if and (eq $cond.type "Ready") (eq $cond.status "True") }}
+    {{- $podIdentityReady = true }}
+  {{- end }}
+{{- end }}
+
+# ==============================================================================
+# Compute status output
+# ==============================================================================
+
+# Ready state determined by function-auto-ready
+{{- $ready := false }}
+
+{{- $state = set $state "observed" (dict
+  "helmExternalSecrets" (dict "ready" $helmExternalSecretsReady)
+  "podIdentity" (dict "ready" $podIdentityReady)
+) }}
+
+{{- $state = set $state "status" (dict
+  "ready" $ready
+) }}
